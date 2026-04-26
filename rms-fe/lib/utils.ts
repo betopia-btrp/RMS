@@ -1,4 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
+import jsPDF from "jspdf";
 import { twMerge } from "tailwind-merge";
 import type { OrderDTO } from "@/lib/types";
 
@@ -66,200 +67,171 @@ export function getPaymentSlipData(order: OrderDTO) {
   };
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function addWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight = 7) {
+  const lines = doc.splitTextToSize(text, maxWidth);
+  doc.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+function ensurePageSpace(doc: jsPDF, currentY: number, requiredHeight: number) {
+  if (currentY + requiredHeight <= 280) {
+    return currentY;
+  }
+
+  doc.addPage();
+  return 20;
 }
 
 export function openInvoicePdf(order: OrderDTO) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const invoiceWindow = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
-  if (!invoiceWindow) {
-    return;
-  }
-
-  const itemsMarkup = order.items
-    .map(
-      (item) => `
-        <tr>
-          <td>${escapeHtml(item.name)}</td>
-          <td>${item.quantity}</td>
-          <td>${formatCurrency(item.price)}</td>
-          <td>${formatCurrency(item.price * item.quantity)}</td>
-        </tr>
-      `
-    )
-    .join("");
-
   const slip = getPaymentSlipData(order);
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const rightColumnX = 118;
+  const cardWidth = 72;
 
-  invoiceWindow.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <title>Payment Slip ${escapeHtml(order.id)}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 32px;
-            color: #23233f;
-            background: #fffaf4;
-          }
-          .sheet {
-            max-width: 860px;
-            margin: 0 auto;
-            background: #ffffff;
-            border-radius: 24px;
-            padding: 32px;
-            box-shadow: 0 12px 40px rgba(35, 35, 63, 0.08);
-          }
-          .brand {
-            font-size: 32px;
-            font-weight: 800;
-            letter-spacing: -0.04em;
-          }
-          .brand span { color: #ff7a1a; }
-          .meta, .summary {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 16px;
-            margin-top: 24px;
-          }
-          .card {
-            background: #fff6ee;
-            border-radius: 18px;
-            padding: 16px;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 24px;
-          }
-          th, td {
-            text-align: left;
-            padding: 14px 12px;
-            border-bottom: 1px solid #f3e4d7;
-          }
-          th { color: #7b7288; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
-          .total {
-            margin-top: 24px;
-            text-align: right;
-            font-size: 28px;
-            font-weight: 800;
-          }
-          .note {
-            margin-top: 20px;
-            font-size: 13px;
-            color: #6b7280;
-          }
-          .actions {
-            display: flex;
-            gap: 12px;
-            margin-top: 24px;
-          }
-          .button {
-            border: 0;
-            border-radius: 999px;
-            padding: 12px 18px;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-          }
-          .button-primary {
-            background: #ff7a1a;
-            color: white;
-          }
-          .button-secondary {
-            background: #23233f;
-            color: white;
-          }
-          @media print {
-            body { background: #ffffff; padding: 0; }
-            .sheet { box-shadow: none; border-radius: 0; }
-            .actions { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="sheet">
-          <div class="brand">SAV<span>OR.</span></div>
-          <p style="margin: 8px 0 0; color: #6b7280;">Payment slip for your restaurant order</p>
+  doc.setFillColor(255, 246, 238);
+  doc.rect(0, 0, pageWidth, 297, "F");
 
-          <div class="meta">
-            <div class="card">
-              <strong>Slip Number</strong>
-              <div>${escapeHtml(slip.slipNumber)}</div>
-            </div>
-            <div class="card">
-              <strong>Table</strong>
-              <div>${escapeHtml(order.tableNumber)}</div>
-            </div>
-            <div class="card">
-              <strong>Payment</strong>
-              <div>${escapeHtml(slip.paymentLabel)} - ${escapeHtml(slip.paymentStateLabel)}</div>
-            </div>
-            <div class="card">
-              <strong>Reference</strong>
-              <div>${escapeHtml(slip.reference)}</div>
-            </div>
-            <div class="card">
-              <strong>Issued</strong>
-              <div>${escapeHtml(slip.issuedAtLabel)}</div>
-            </div>
-            <div class="card">
-              <strong>Processed By</strong>
-              <div>${escapeHtml(slip.cashierName)}</div>
-            </div>
-            <div class="card">
-              <strong>Service Point</strong>
-              <div>${escapeHtml(slip.servicePoint)}</div>
-            </div>
-            <div class="card">
-              <strong>Guests</strong>
-              <div>${slip.guestCount}</div>
-            </div>
-          </div>
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(12, 12, pageWidth - 24, 273, 8, 8, "F");
 
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>Unit Price</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>${itemsMarkup}</tbody>
-          </table>
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(26);
+  doc.setTextColor(35, 35, 63);
+  doc.text(getRestaurantName(), 20, 28);
 
-          <div class="summary">
-            <div class="card">
-              <strong>Status</strong>
-              <div>${escapeHtml(slip.statusLabel)}</div>
-            </div>
-            <div class="card">
-              <strong>Estimated Ready</strong>
-              <div>${new Date(order.estimatedReadyAt).toLocaleString()}</div>
-            </div>
-          </div>
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(107, 114, 128);
+  doc.text("Payment slip for your restaurant order", 20, 35);
 
-          <div class="total">Grand Total: ${formatCurrency(slip.total)}</div>
-          <div class="note">Use the print button below and choose "Save as PDF" to download this payment slip.</div>
-          <div class="actions">
-            <button class="button button-primary" onclick="window.print()">Print Or Save PDF</button>
-            <button class="button button-secondary" onclick="window.close()">Close</button>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
-  invoiceWindow.document.close();
+  doc.setDrawColor(243, 228, 215);
+  doc.line(20, 40, pageWidth - 20, 40);
+
+  const leftMeta = [
+    ["Slip Number", slip.slipNumber],
+    ["Order ID", order.id],
+    ["Table", order.tableNumber],
+    ["Issued", slip.issuedAtLabel],
+    ["Status", slip.statusLabel],
+  ] as const;
+  const rightMeta = [
+    ["Payment", `${slip.paymentLabel} - ${slip.paymentStateLabel}`],
+    ["Reference", slip.reference],
+    ["Processed By", slip.cashierName],
+    ["Service Point", slip.servicePoint],
+    ["Guests", String(slip.guestCount)],
+  ] as const;
+
+  let leftY = 50;
+  for (const [label, value] of leftMeta) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(35, 35, 63);
+    doc.text(label, 20, leftY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(107, 114, 128);
+    leftY = addWrappedText(doc, value, 20, leftY + 6, 82) + 4;
+  }
+
+  let rightY = 50;
+  for (const [label, value] of rightMeta) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(35, 35, 63);
+    doc.text(label, rightColumnX, rightY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(107, 114, 128);
+    rightY = addWrappedText(doc, value, rightColumnX, rightY + 6, 72) + 4;
+  }
+
+  let y = Math.max(leftY, rightY) + 8;
+  y = ensurePageSpace(doc, y, 24);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(35, 35, 63);
+  doc.text("Slip Details", 20, y);
+  y += 8;
+
+  doc.setFillColor(255, 246, 238);
+  doc.roundedRect(20, y, 106, 10, 3, 3, "F");
+  doc.roundedRect(128, y, 18, 10, 3, 3, "F");
+  doc.roundedRect(148, y, 24, 10, 3, 3, "F");
+  doc.roundedRect(174, y, 20, 10, 3, 3, "F");
+
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.text("Item", 24, y + 6.5);
+  doc.text("Qty", 133, y + 6.5);
+  doc.text("Unit", 153, y + 6.5);
+  doc.text("Total", 178, y + 6.5);
+
+  y += 16;
+
+  for (const item of order.items) {
+    const note = item.specialInstructions ? `Note: ${item.specialInstructions}` : "";
+    const itemLines = doc.splitTextToSize(item.name, 100);
+    const noteLines = note ? doc.splitTextToSize(note, 100) : [];
+    const rowHeight = Math.max(12, 6 + (itemLines.length + noteLines.length) * 5);
+
+    y = ensurePageSpace(doc, y, rowHeight + 6);
+
+    doc.setFillColor(255, 250, 246);
+    doc.roundedRect(20, y - 4, pageWidth - 40, rowHeight, 4, 4, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(35, 35, 63);
+    doc.text(itemLines, 24, y + 2);
+
+    let itemTextY = y + 2 + itemLines.length * 5;
+    if (noteLines.length) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(107, 114, 128);
+      doc.text(noteLines, 24, itemTextY + 1);
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(35, 35, 63);
+    doc.text(String(item.quantity), 133, y + 2);
+    doc.text(formatCurrency(item.price), 153, y + 2, { align: "left" });
+    doc.text(formatCurrency(item.price * item.quantity), 178, y + 2, { align: "left" });
+
+    y += rowHeight + 4;
+  }
+
+  y += 4;
+  y = ensurePageSpace(doc, y, 42);
+
+  const summaryCards = [
+    { label: "Subtotal", value: formatCurrency(slip.subtotal) },
+    { label: "Service Charge", value: formatCurrency(slip.serviceCharge) },
+    { label: "Total", value: formatCurrency(slip.total), emphasized: true },
+  ];
+
+  let cardX = 20;
+  for (const card of summaryCards) {
+    const fillColor = card.emphasized ? [35, 35, 63] : [255, 250, 246];
+    const textColor = card.emphasized ? [255, 255, 255] : [107, 114, 128];
+    doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+    doc.roundedRect(cardX, y, cardWidth, 24, 4, 4, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+    doc.text(card.label, cardX + 4, y + 8);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(card.value, cardX + 4, y + 17);
+    cardX += cardWidth + 6;
+  }
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.text(`Estimated ready time: ${new Date(order.estimatedReadyAt).toLocaleString()}`, 20, y + 34);
+
+  doc.save(`${slip.slipNumber}.pdf`);
 }

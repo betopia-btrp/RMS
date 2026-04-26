@@ -39,7 +39,7 @@ export default async function MenuPage() {
           <div className="relative z-10 grid gap-10 lg:grid-cols-[0.96fr_1.04fr] lg:items-center">
             <div className="max-w-2xl">
               <Badge className="border-none bg-[#fff1e5] text-[#ff7a1a]">
-                <Sparkles className="mr-2 h-3.5 w-3.5" /> Modern restaurant ordering SaaS
+                <Sparkles className="mr-2 h-3.5 w-3.5" /> A Product by Betopia Limited
               </Badge>
               <h1 className="font-display mt-5 text-5xl font-bold leading-[0.96] text-[#23233f] sm:text-6xl">
                 Enjoy our delicious meal with a beautifully guided digital menu.
@@ -68,7 +68,7 @@ export default async function MenuPage() {
                 {[
                   ["30+", "Dishes crafted"],
                   ["2 sec", "Tracking refresh"],
-                  ["100%", "Frontend only"]
+                  ["100%", "Fresh Food"]
                 ].map(([value, label]) => (
                   <div key={label} className="rounded-[28px] bg-[#fffaf6] p-5 shadow-soft">
                     <p className="text-3xl font-extrabold text-[#ff7a1a]">{value}</p>
