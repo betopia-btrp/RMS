@@ -78,7 +78,7 @@ export function canCancelOrder(order: OrderDTO | null | undefined) {
     return false;
   }
 
-  if (order.status === "CANCELLED" || order.status === "SERVED") {
+  if (order.status !== "ORDER_TAKEN") {
     return false;
   }
 
@@ -86,7 +86,7 @@ export function canCancelOrder(order: OrderDTO | null | undefined) {
 }
 
 export function getCancellationTimeRemaining(order: OrderDTO | null | undefined) {
-  if (!order) {
+  if (!order || order.status !== "ORDER_TAKEN") {
     return 0;
   }
 
