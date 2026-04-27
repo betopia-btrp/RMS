@@ -92,6 +92,21 @@ export function MenuCard({ item }: { item: MenuItemDTO }) {
               </div>
             </div>
 
+            <div className="grid gap-3 rounded-[28px] bg-[#fffaf6] p-4 text-sm shadow-soft">
+              <div>
+                <p className="text-slate-400">Ingredients</p>
+                <p className="mt-1 font-medium text-[#23233f]">
+                  {item.ingredients.length ? item.ingredients.join(", ") : "Prepared fresh daily."}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-400">Allergens</p>
+                <p className="mt-1 font-medium text-[#23233f]">
+                  {item.allergens.length ? item.allergens.join(", ") : "No declared allergens"}
+                </p>
+              </div>
+            </div>
+
             <input
               value={notes}
               onChange={(event) => setNotes(event.target.value)}

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\UpsertMenuItemRequest;
+use App\Http\Resources\MenuItemResource;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\TableUnit;
@@ -29,11 +31,12 @@ class MenuController extends Controller
                 ->orderBy('sort_order')
                 ->get(),
             'items' => MenuItem::query()
-                ->with(['category', 'photos', 'tags', 'allergens'])
+                ->with(['category', 'images', 'photos', 'tags', 'ingredients', 'allergens'])
                 ->where('venue_id', $venue->venue_id)
+                ->where('is_available', true)
                 ->orderBy('sort_order')
                 ->get()
-                ->map(fn (MenuItem $item) => $this->toMenuDto($item)),
+                ->map(fn (MenuItem $item) => (new MenuItemResource($item))->resolve()),
         ]);
     }
 
@@ -47,24 +50,22 @@ class MenuController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(UpsertMenuItemRequest $request): JsonResponse
     {
-        $data = $request->validate($this->rules());
-        $item = MenuItem::create($data);
+        $item = MenuItem::create($request->safe()->except(['tag_ids', 'ingredient_ids', 'allergen_ids', 'image_url', 'image_urls']));
         $this->syncLabels($item, $request);
-        $this->syncPrimaryPhoto($item, $request);
+        $this->syncImages($item, $request);
 
-        return response()->json($this->toMenuDto($item->load(['category', 'photos', 'tags', 'allergens'])), 201);
+        return response()->json(new MenuItemResource($item->load(['category', 'images', 'photos', 'tags', 'ingredients', 'allergens'])), 201);
     }
 
-    public function update(Request $request, MenuItem $menuItem): JsonResponse
+    public function update(UpsertMenuItemRequest $request, MenuItem $menuItem): JsonResponse
     {
-        $data = $request->validate($this->rules(required: false));
-        $menuItem->update($data);
+        $menuItem->update($request->safe()->except(['tag_ids', 'ingredient_ids', 'allergen_ids', 'image_url', 'image_urls']));
         $this->syncLabels($menuItem, $request);
-        $this->syncPrimaryPhoto($menuItem, $request);
+        $this->syncImages($menuItem, $request);
 
-        return response()->json($this->toMenuDto($menuItem->load(['category', 'photos', 'tags', 'allergens'])));
+        return response()->json(new MenuItemResource($menuItem->load(['category', 'images', 'photos', 'tags', 'ingredients', 'allergens'])));
     }
 
     public function destroy(MenuItem $menuItem): JsonResponse
@@ -78,29 +79,7 @@ class MenuController extends Controller
     {
         $menuItem->update(['is_available' => ! $menuItem->is_available]);
 
-        return response()->json($this->toMenuDto($menuItem->load(['category', 'photos', 'tags', 'allergens'])));
-    }
-
-    private function rules(bool $required = true): array
-    {
-        $mode = $required ? 'required' : 'sometimes';
-
-        return [
-            'venue_id' => [$mode, 'uuid', 'exists:venues,venue_id'],
-            'category_id' => [$mode, 'uuid', 'exists:menu_categories,category_id'],
-            'name' => [$mode, 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'price' => [$mode, 'numeric', 'min:0'],
-            'calories' => ['sometimes', 'integer', 'min:0'],
-            'protein_g' => ['sometimes', 'numeric', 'min:0'],
-            'carbs_g' => ['sometimes', 'numeric', 'min:0'],
-            'fat_g' => ['sometimes', 'numeric', 'min:0'],
-            'health_score' => ['sometimes', 'integer', 'between:0,100'],
-            'is_available' => ['sometimes', 'boolean'],
-            'admin_adjusted' => ['sometimes', 'boolean'],
-            'sort_order' => ['sometimes', 'integer', 'min:0'],
-            'image_url' => ['sometimes', 'url', 'max:2048'],
-        ];
+        return response()->json(new MenuItemResource($menuItem->load(['category', 'images', 'photos', 'tags', 'ingredients', 'allergens'])));
     }
 
     private function syncLabels(MenuItem $item, Request $request): void
@@ -109,57 +88,50 @@ class MenuController extends Controller
             $item->tags()->sync($request->array('tag_ids'));
         }
 
+        if ($request->has('ingredient_ids')) {
+            $item->ingredients()->sync($request->array('ingredient_ids'));
+        }
+
         if ($request->has('allergen_ids')) {
             $item->allergens()->sync($request->array('allergen_ids'));
         }
     }
 
-    private function syncPrimaryPhoto(MenuItem $item, Request $request): void
+    private function syncImages(MenuItem $item, Request $request): void
     {
-        if (! $request->filled('image_url')) {
+        $imageUrls = collect($request->input('image_urls', []))
+            ->filter(fn ($value) => is_string($value) && filled($value))
+            ->values();
+
+        if ($imageUrls->isEmpty() && $request->filled('image_url')) {
+            $imageUrls = collect([$request->string('image_url')->toString()]);
+        }
+
+        if ($imageUrls->isEmpty()) {
             return;
         }
 
+        $item->images()->delete();
+
+        $imageUrls->take(5)->values()->each(function (string $url, int $index) use ($item) {
+            $item->images()->create([
+                'image_url' => $url,
+                'sort_order' => $index + 1,
+                'uploaded_at' => now(),
+            ]);
+        });
+
+        $primaryUrl = $imageUrls->first();
         $photo = $item->photos()->orderBy('sort_order')->first();
 
         if ($photo) {
-            $photo->update(['s3_url' => $request->string('image_url')->toString(), 'uploaded_at' => now()]);
-            return;
+            $photo->update(['s3_url' => $primaryUrl, 'sort_order' => 1, 'uploaded_at' => now()]);
+        } else {
+            $item->photos()->create([
+                's3_url' => $primaryUrl,
+                'sort_order' => 1,
+                'uploaded_at' => now(),
+            ]);
         }
-
-        $item->photos()->create([
-            's3_url' => $request->string('image_url')->toString(),
-            'sort_order' => 1,
-            'uploaded_at' => now(),
-        ]);
-    }
-
-    public function toMenuDto(MenuItem $item): array
-    {
-        $tagNames = $item->tags->pluck('name')->values();
-        $photo = $item->photos->sortBy('sort_order')->first();
-
-        return [
-            'id' => $item->item_id,
-            'name' => $item->name,
-            'description' => $item->description ?? '',
-            'price' => (float) $item->price,
-            'category' => $item->category?->name,
-            'image' => $photo?->s3_url,
-            'imageUrl' => $photo?->s3_url ?? '',
-            'tags' => $tagNames,
-            'dietaryLabels' => $tagNames,
-            'allergens' => $item->allergens->pluck('name')->values(),
-            'nutritionCalories' => $item->calories,
-            'nutritionProtein' => (float) $item->protein_g,
-            'nutritionCarbs' => (float) $item->carbs_g,
-            'spicy' => $tagNames->contains('Spicy'),
-            'vegetarian' => $tagNames->contains('Vegetarian'),
-            'vegan' => $tagNames->contains('Vegan'),
-            'halal' => $tagNames->contains('Halal'),
-            'glutenFree' => $tagNames->contains('Gluten-Free'),
-            'available' => $item->is_available,
-            'healthScore' => $item->health_score,
-        ];
     }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAdminStore } from "@/lib/store/admin-store";
@@ -9,10 +9,11 @@ import { useToastStore } from "@/lib/store/toast-store";
 
 export function AdminLoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const login = useAdminStore((state) => state.login);
   const pushToast = useToastStore((state) => state.pushToast);
-  const [email, setEmail] = useState("admin@savoria.local");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -24,20 +25,29 @@ export function AdminLoginForm() {
         setLoading(true);
         setError("");
 
-        const success = login(email, password);
+        const result = await login(email, password);
         setLoading(false);
 
-        if (!success) {
-          setError("Invalid credentials. Use admin@savoria.local / admin123.");
+        if (!result.success) {
+          setError(result.message ?? "Invalid credentials.");
           return;
         }
 
         pushToast({
-          title: "Admin login successful",
-          description: "You can now manage orders and menu items.",
+          title: "Staff login successful",
+          description: "Your role access has been activated for this device.",
           tone: "success"
         });
-        router.push("/admin/dashboard");
+
+        const next = searchParams.get("next");
+        if (next) {
+          router.push(next);
+          return;
+        }
+
+        router.push(
+          result.role === "ADMIN" ? "/admin/dashboard" : result.role === "KITCHEN" ? "/kitchen" : "/staff"
+        );
       }}
     >
       <div className="space-y-2">
@@ -54,8 +64,10 @@ export function AdminLoginForm() {
         />
       </div>
       <div className="rounded-[24px] bg-[#fff7f0] px-4 py-4 text-sm text-slate-500">
-        Demo credentials: <span className="font-semibold text-[#23233f]">admin@savoria.local</span> /{" "}
-        <span className="font-semibold text-[#23233f]">admin123</span>
+        Demo credentials: <span className="font-semibold text-[#23233f]">admin@savoria.local</span> / <span className="font-semibold text-[#23233f]">admin123</span>,{" "}
+        <span className="font-semibold text-[#23233f]">kitchen@savoria.local</span> / <span className="font-semibold text-[#23233f]">kitchen123</span>,{" "}
+        <span className="font-semibold text-[#23233f]">waiter1@savoria.local</span>, <span className="font-semibold text-[#23233f]">waiter2@savoria.local</span>,{" "}
+        <span className="font-semibold text-[#23233f]">waiter3@savoria.local</span> / <span className="font-semibold text-[#23233f]">waiter123</span>
       </div>
       {error ? <p className="text-sm text-rose-500">{error}</p> : null}
       <Button className="w-full" disabled={loading}>

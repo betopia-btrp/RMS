@@ -235,3 +235,132 @@ export function openInvoicePdf(order: OrderDTO) {
 
   doc.save(`${slip.slipNumber}.pdf`);
 }
+
+export function downloadAdminReportPdf(input: {
+  restaurantName: string;
+  period: "daily" | "weekly" | "monthly";
+  generatedAt: string;
+  fromLabel: string;
+  toLabel: string;
+  totalOrders: number;
+  activeOrders: number;
+  completedOrders: number;
+  cancelledOrders: number;
+  revenue: number;
+  orders: OrderDTO[];
+}) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = 20;
+
+  const periodLabel = `${input.period.charAt(0).toUpperCase()}${input.period.slice(1)} Report`;
+
+  doc.setFillColor(255, 246, 238);
+  doc.rect(0, 0, pageWidth, pageHeight, "F");
+
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(12, 12, pageWidth - 24, pageHeight - 24, 8, 8, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(24);
+  doc.setTextColor(35, 35, 63);
+  doc.text(input.restaurantName, 20, y);
+
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(107, 114, 128);
+  doc.text(`${periodLabel} - Admin Dashboard`, 20, y);
+
+  y += 7;
+  doc.text(`Range: ${input.fromLabel} to ${input.toLabel}`, 20, y);
+  y += 6;
+  doc.text(`Generated: ${input.generatedAt}`, 20, y);
+
+  y += 10;
+  const cards = [
+    { label: "Orders", value: String(input.totalOrders), fill: [255, 244, 232] as const, text: [35, 35, 63] as const },
+    { label: "Revenue", value: formatCurrency(input.revenue), fill: [35, 35, 63] as const, text: [255, 255, 255] as const },
+    { label: "Active", value: String(input.activeOrders), fill: [255, 250, 246] as const, text: [35, 35, 63] as const },
+    { label: "Completed", value: String(input.completedOrders), fill: [236, 253, 245] as const, text: [35, 35, 63] as const },
+  ];
+
+  let cardX = 20;
+  for (const card of cards) {
+    doc.setFillColor(card.fill[0], card.fill[1], card.fill[2]);
+    doc.roundedRect(cardX, y, 41, 22, 4, 4, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(card.text[0], card.text[1], card.text[2]);
+    doc.text(card.label, cardX + 4, y + 7);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(card.value, cardX + 4, y + 16);
+    cardX += 43;
+  }
+
+  y += 30;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(107, 114, 128);
+  doc.text(`Cancelled: ${input.cancelledOrders}`, 20, y);
+
+  y += 10;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(35, 35, 63);
+  doc.text("Orders", 20, y);
+
+  y += 8;
+  doc.setFillColor(255, 246, 238);
+  doc.roundedRect(20, y, 34, 10, 3, 3, "F");
+  doc.roundedRect(56, y, 22, 10, 3, 3, "F");
+  doc.roundedRect(80, y, 30, 10, 3, 3, "F");
+  doc.roundedRect(112, y, 27, 10, 3, 3, "F");
+  doc.roundedRect(141, y, 27, 10, 3, 3, "F");
+  doc.roundedRect(170, y, 24, 10, 3, 3, "F");
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(107, 114, 128);
+  doc.text("Order", 23, y + 6.5);
+  doc.text("Table", 59, y + 6.5);
+  doc.text("Status", 83, y + 6.5);
+  doc.text("Payment", 115, y + 6.5);
+  doc.text("Created", 144, y + 6.5);
+  doc.text("Total", 173, y + 6.5);
+  y += 14;
+
+  if (!input.orders.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(107, 114, 128);
+    doc.text("No orders found in this reporting range.", 20, y);
+  } else {
+    for (const order of input.orders) {
+      const createdLabel = new Date(order.createdAt).toLocaleString();
+      const rowHeight = 12;
+      y = ensurePageSpace(doc, y, rowHeight + 8);
+
+      doc.setFillColor(255, 250, 246);
+      doc.roundedRect(20, y - 4, pageWidth - 40, rowHeight, 4, 4, "F");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(35, 35, 63);
+      doc.text(doc.splitTextToSize(order.id, 30), 23, y + 2);
+
+      doc.setFont("helvetica", "normal");
+      doc.text(doc.splitTextToSize(order.tableNumber || "Takeaway", 18), 59, y + 2);
+      doc.text(doc.splitTextToSize(order.status.replaceAll("_", " "), 26), 83, y + 2);
+      doc.text(doc.splitTextToSize(getPaymentLabel(order.paymentMethod), 23), 115, y + 2);
+      doc.text(doc.splitTextToSize(createdLabel, 24), 144, y + 2);
+      doc.text(formatCurrency(order.total), 173, y + 2);
+
+      y += rowHeight + 3;
+    }
+  }
+
+  doc.save(`${input.period}-report.pdf`);
+}

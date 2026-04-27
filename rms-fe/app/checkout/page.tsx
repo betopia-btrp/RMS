@@ -8,9 +8,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/store/cart-store";
-import { useOrderStore } from "@/lib/store/order-store";
 import { useTableStore } from "@/lib/store/table-store";
 import { useToastStore } from "@/lib/store/toast-store";
+import { createBackendOrder, fetchMenuSnapshot } from "@/lib/api";
 import { paymentMethods, type PaymentMethod } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
@@ -33,7 +33,6 @@ function CheckoutContent() {
   const items = useCart((state) => state.items);
   const total = useCart((state) => state.total);
   const clearCart = useCart((state) => state.clearCart);
-  const createOrder = useOrderStore((state) => state.createOrder);
   const joinedTable = useTableStore((state) => state.joinedTable);
   const joinTable = useTableStore((state) => state.joinTable);
   const pushToast = useToastStore((state) => state.pushToast);
@@ -122,25 +121,36 @@ function CheckoutContent() {
       await new Promise((resolve) =>
         window.setTimeout(resolve, paymentMethod === "CASH" ? 500 : 1200)
       );
-      const order = createOrder({
-        tableNumber,
-        items,
-        paymentMethod,
-        paymentStatus: paymentMethod === "CASH" ? "PAY_ON_TABLE" : "PAID",
-        paymentLast4: paymentMethod === "CARD" ? sanitizedCard.slice(-4) : undefined,
-        paymentAccount:
-          paymentMethod === "BKASH" || paymentMethod === "NAGAD" || paymentMethod === "ROCKET"
-            ? sanitizedWalletNumber.slice(-4)
-            : undefined
-      });
-      window.localStorage.setItem("latest-order-id", order.id);
+
+      const menuSnapshot = await fetchMenuSnapshot();
+      const backendOrder = menuSnapshot?.venue?.venue_id
+        ? await createBackendOrder({
+            client_request_id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+            venue_id: menuSnapshot.venue.venue_id,
+            table_label: tableNumber,
+            payment_method: paymentMethod,
+            payment_status: paymentMethod === "CASH" ? "PAY_ON_TABLE" : "PAID",
+            items: items.map((item) => ({
+              item_id: item.id,
+              quantity: item.quantity,
+              special_instruction: item.specialInstructions
+            }))
+          })
+        : null;
+
+      if (!backendOrder) {
+        setError("Unable to place your order right now. Please try again once the server is available.");
+        return;
+      }
+
+      window.localStorage.setItem("latest-order-id", backendOrder.id);
       pushToast({
         title: "Order placed successfully",
-        description: `Your order ID is ${order.id}. You can now follow it live.`,
+        description: `Your order ID is ${backendOrder.id}. You can now follow it live.`,
         tone: "success"
       });
       clearCart();
-      router.push(`/order/${order.id}`);
+      router.push(`/order/${backendOrder.id}`);
     } catch {
       setError("Unable to place your order.");
     } finally {

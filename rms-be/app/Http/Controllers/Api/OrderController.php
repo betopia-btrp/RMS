@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreOrderRequest;
+use App\Http\Requests\UpdateOrderStatusRequest;
+use App\Http\Resources\OrderResource;
 use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\Notification;
@@ -11,38 +14,41 @@ use App\Models\Payment;
 use App\Models\Receipt;
 use App\Models\TableUnit;
 use App\Models\Venue;
+use App\Support\OrderStatus;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
         $orders = Order::query()
-            ->with(['table', 'items.menuItem', 'payment'])
+            ->with(['table', 'items.menuItem.category', 'payment'])
             ->when($request->query('venue_id'), fn ($query, $venueId) => $query->where('venue_id', $venueId))
             ->latest()
-            ->get()
-            ->map(fn (Order $order) => $this->toOrderDto($order));
+            ->get();
 
-        return response()->json(['orders' => $orders]);
+        return response()->json(['orders' => OrderResource::collection($orders)]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StoreOrderRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'venue_id' => ['required', 'uuid', 'exists:venues,venue_id'],
-            'table_id' => ['nullable', 'uuid', 'exists:table_units,table_id'],
-            'table_label' => ['nullable', 'string'],
-            'customer_phone' => ['nullable', 'string', 'max:40'],
-            'payment_method' => ['required', 'string'],
-            'payment_status' => ['required', 'string'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.item_id' => ['required', 'uuid', 'exists:menu_items,item_id'],
-            'items.*.quantity' => ['required', 'integer', 'min:1'],
-            'items.*.special_instruction' => ['nullable', 'string'],
-        ]);
+        $data = $request->validated();
+        $existingOrder = null;
+
+        if (! empty($data['client_request_id'])) {
+            $existingOrder = Order::query()
+                ->with(['table', 'items.menuItem.category', 'payment'])
+                ->where('venue_id', $data['venue_id'])
+                ->where('client_request_id', $data['client_request_id'])
+                ->first();
+        }
+
+        if ($existingOrder) {
+            return response()->json(new OrderResource($existingOrder));
+        }
 
         $order = DB::transaction(function () use ($data) {
             $venue = Venue::findOrFail($data['venue_id']);
@@ -82,7 +88,8 @@ class OrderController extends Controller
                 'venue_id' => $venue->venue_id,
                 'table_id' => $tableId,
                 'customer_id' => $customer?->customer_id,
-                'status' => 'ORDER_TAKEN',
+                'client_request_id' => $data['client_request_id'] ?? null,
+                'status' => OrderStatus::PENDING,
                 'total_amount' => $total,
                 'estimated_wait_min' => 18,
             ]);
@@ -117,34 +124,55 @@ class OrderController extends Controller
             return $order->load(['table', 'items.menuItem', 'payment']);
         });
 
-        return response()->json($this->toOrderDto($order), 201);
+        return response()->json(new OrderResource($order->load(['table', 'items.menuItem.category', 'payment'])), 201);
     }
 
     public function show(Order $order): JsonResponse
     {
-        return response()->json($this->toOrderDto($order->load(['table', 'items.menuItem', 'payment'])));
+        return response()->json(new OrderResource($order->load(['table', 'items.menuItem.category', 'payment'])));
     }
 
-    public function updateStatus(Request $request, Order $order): JsonResponse
+    public function updateStatus(UpdateOrderStatusRequest $request, Order $order): JsonResponse
     {
-        $data = $request->validate(['status' => ['required', 'in:ORDER_TAKEN,IN_KITCHEN,READY,SERVED,CANCELLED']]);
+        $normalizedStatus = OrderStatus::normalize($request->validated('status'));
+        abort_unless(in_array($normalizedStatus, OrderStatus::all(), true), 422, 'Invalid order status.');
+        $role = strtoupper((string) $request->user()?->role);
+
+        if (! OrderStatus::canTransition($order->status, $normalizedStatus, $role)) {
+            $allowedTargets = OrderStatus::transitionTargets($order->status, $role);
+            throw ValidationException::withMessages([
+                'status' => [
+                    'Invalid status transition from '.OrderStatus::publicLabel($order->status)
+                    .' to '.OrderStatus::publicLabel($normalizedStatus)
+                    .' for '.$role.'. Allowed next statuses: '
+                    .($allowedTargets
+                        ? implode(', ', array_map(fn (string $status) => OrderStatus::publicLabel($status), $allowedTargets))
+                        : 'none'),
+                ],
+            ]);
+        }
+
         $timestamps = [
-            'served_at' => $data['status'] === 'SERVED' ? now() : $order->served_at,
-            'cancelled_at' => $data['status'] === 'CANCELLED' ? now() : $order->cancelled_at,
+            'served_at' => $normalizedStatus === OrderStatus::SERVED ? now() : null,
+            'cancelled_at' => $order->cancelled_at,
         ];
 
-        $order->update(['status' => $data['status']] + $timestamps);
+        $order->update(['status' => $normalizedStatus] + $timestamps);
 
-        return response()->json($this->toOrderDto($order->load(['table', 'items.menuItem', 'payment'])));
+        return response()->json(new OrderResource($order->load(['table', 'items.menuItem.category', 'payment'])));
     }
 
     public function cancel(Order $order): JsonResponse
     {
-        abort_if($order->created_at->diffInMinutes(now()) > 5 || in_array($order->status, ['SERVED', 'CANCELLED'], true), 422, 'Order can no longer be cancelled.');
+        abort_if(
+            $order->created_at->diffInMinutes(now()) > 5 || $order->status !== OrderStatus::PENDING,
+            422,
+            'Order can no longer be cancelled.'
+        );
 
-        $order->update(['status' => 'CANCELLED', 'cancelled_at' => now()]);
+        $order->update(['status' => OrderStatus::CANCELLED, 'cancelled_at' => now()]);
 
-        return response()->json($this->toOrderDto($order->load(['table', 'items.menuItem', 'payment'])));
+        return response()->json(new OrderResource($order->load(['table', 'items.menuItem.category', 'payment'])));
     }
 
     public function receipt(Payment $payment): JsonResponse
@@ -155,29 +183,5 @@ class OrderController extends Controller
         );
 
         return response()->json($receipt->load('payment.order'));
-    }
-
-    private function toOrderDto(Order $order): array
-    {
-        $payment = $order->payment;
-
-        return [
-            'id' => $order->order_id,
-            'tableNumber' => $order->table?->label ?? 'Takeaway',
-            'total' => (float) $order->total_amount,
-            'status' => $order->status,
-            'paymentStatus' => $payment?->status ?? 'PAY_ON_TABLE',
-            'paymentMethod' => $payment?->method ?? 'CASH',
-            'estimatedReadyAt' => $order->created_at->copy()->addMinutes($order->estimated_wait_min)->toISOString(),
-            'createdAt' => $order->created_at->toISOString(),
-            'items' => $order->items->map(fn ($item) => [
-                'id' => $item->order_item_id,
-                'menuItemId' => $item->item_id,
-                'name' => $item->menuItem?->name,
-                'price' => (float) $item->unit_price,
-                'quantity' => $item->quantity,
-                'specialInstructions' => $item->special_instruction,
-            ])->values(),
-        ];
     }
 }

@@ -34,8 +34,15 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
     if (!hydrated) return;
 
     if (items.length) {
-      const incomingSignature = items.map((item) => `${item.id}:${item.imageUrl}`).join("|");
-      const storedSignature = storedItems.map((item) => `${item.id}:${item.imageUrl}`).join("|");
+      const toSignature = (menuItems: MenuItemDTO[]) =>
+        menuItems
+          .map(
+            (item) =>
+              `${item.id}:${item.available}:${item.imageUrl}:${item.imageUrls?.join(",") ?? ""}:${item.price}`
+          )
+          .join("|");
+      const incomingSignature = toSignature(items);
+      const storedSignature = toSignature(storedItems);
 
       if (incomingSignature !== storedSignature) {
         setMenuItems(items);

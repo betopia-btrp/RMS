@@ -30,7 +30,9 @@ class MenuItem extends Model
 
     public function venue(): BelongsTo { return $this->belongsTo(Venue::class, 'venue_id'); }
     public function category(): BelongsTo { return $this->belongsTo(MenuCategory::class, 'category_id'); }
+    public function images(): HasMany { return $this->hasMany(MenuItemImage::class, 'item_id')->orderBy('sort_order'); }
     public function photos(): HasMany { return $this->hasMany(MenuItemPhoto::class, 'item_id'); }
     public function tags(): BelongsToMany { return $this->belongsToMany(DietaryTag::class, 'menu_item_tags', 'item_id', 'tag_id'); }
+    public function ingredients(): BelongsToMany { return $this->belongsToMany(Ingredient::class, 'menu_item_ingredients', 'item_id', 'ingredient_id'); }
     public function allergens(): BelongsToMany { return $this->belongsToMany(Allergen::class, 'menu_item_allergens', 'item_id', 'allergen_id'); }
 }

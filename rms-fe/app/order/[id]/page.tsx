@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { CheckCircle2, CircleDashed, CookingPot, PartyPopper, ReceiptText, XCircle } from "lucide-react";
-import { getLiveOrder, getStoredOrderById, useOrderStore } from "@/lib/store/order-store";
+import { useOrderStore } from "@/lib/store/order-store";
+import { fetchBackendOrder } from "@/lib/api";
+import type { OrderDTO } from "@/lib/types";
 import { formatCurrency, getPaymentLabel, openInvoicePdf } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,18 +23,42 @@ const steps = [
 
 export default function OrderConfirmationPage() {
   const params = useParams<{ id: string }>();
-  const orders = useOrderStore((state) => state.orders);
+  const upsertOrder = useOrderStore((state) => state.upsertOrder);
   const pushToast = useToastStore((state) => state.pushToast);
   const [hydrated, setHydrated] = useState(false);
+  const [order, setOrder] = useState<OrderDTO | null>(null);
 
   useEffect(() => {
     setHydrated(true);
   }, []);
 
-  const order = useMemo(() => {
-    if (!hydrated) return null;
-    return getLiveOrder(getStoredOrderById(params.id) ?? orders.find((item) => item.id === params.id));
-  }, [hydrated, orders, params.id]);
+  useEffect(() => {
+    if (!hydrated || !params.id) {
+      return;
+    }
+
+    let active = true;
+
+    async function syncOrder() {
+      const payload = await fetchBackendOrder(params.id);
+      if (!active || !payload) {
+        return;
+      }
+
+      upsertOrder(payload);
+      setOrder(payload);
+    }
+
+    void syncOrder();
+    const interval = window.setInterval(() => {
+      void syncOrder();
+    }, 4000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [hydrated, params.id, upsertOrder]);
 
   if (hydrated && !order) {
     return (
@@ -40,7 +66,7 @@ export default function OrderConfirmationPage() {
         <Card className="max-w-xl p-8 text-center">
           <p className="text-sm uppercase tracking-[0.25em] text-orange-500">Order Missing</p>
           <h1 className="font-display mt-3 text-5xl font-bold text-[#23233f]">We could not find this order</h1>
-          <p className="mt-3 text-slate-500">It may have been removed from local storage on this device.</p>
+          <p className="mt-3 text-slate-500">It may not exist in the backend anymore or the server is unavailable.</p>
           <Link href="/menu" className="mt-6 inline-block">
             <Button>Back To Menu</Button>
           </Link>
@@ -130,7 +156,7 @@ export default function OrderConfirmationPage() {
                 </div>
                 <div>
                   <p className="font-display text-2xl font-bold text-[#23233f]">This order was cancelled</p>
-                  <p className="mt-1 text-sm text-slate-500">The cancellation has been saved in local storage.</p>
+                  <p className="mt-1 text-sm text-slate-500">The cancellation has been saved in the shared order record.</p>
                 </div>
               </div>
             </div>

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PaymentSlipCard } from "@/components/order/payment-slip-card";
+import { cancelBackendOrder, fetchBackendOrder } from "@/lib/api";
 import type { OrderDTO } from "@/lib/types";
 import {
   canCancelOrder,
@@ -28,7 +29,7 @@ const steps = [
 export function TrackClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const cancelOrder = useOrderStore((state) => state.cancelOrder);
+  const upsertOrder = useOrderStore((state) => state.upsertOrder);
   const pushToast = useToastStore((state) => state.pushToast);
   const [orderId, setOrderId] = useState(searchParams.get("orderId") ?? "");
   const [searchValue, setSearchValue] = useState(searchParams.get("orderId") ?? "");
@@ -41,27 +42,34 @@ export function TrackClient() {
     if (!orderId) return;
 
     function poll() {
-      const nextOrder = getLiveOrder(getStoredOrderById(orderId));
-      if (!nextOrder) {
-        setOrder(null);
-        setTimeRemainingMs(0);
-        lastStatusRef.current = null;
-        setError("Order not found.");
-        return;
-      }
+      void (async () => {
+        const backendOrder = await fetchBackendOrder(orderId);
+        if (backendOrder) {
+          upsertOrder(backendOrder);
+        }
 
-      if (lastStatusRef.current && lastStatusRef.current !== nextOrder.status) {
-        pushToast({
-          title: `Order ${nextOrder.status.replaceAll("_", " ").toLowerCase()}`,
-          description: `Tracking for ${nextOrder.id} just moved to ${nextOrder.status.replaceAll("_", " ")}.`,
-          tone: nextOrder.status === "SERVED" ? "success" : "info"
-        });
-      }
+        const nextOrder = getLiveOrder(backendOrder ?? getStoredOrderById(orderId));
+        if (!nextOrder) {
+          setOrder(null);
+          setTimeRemainingMs(0);
+          lastStatusRef.current = null;
+          setError("Order not found.");
+          return;
+        }
 
-      lastStatusRef.current = nextOrder.status;
-      setOrder(nextOrder);
-      setTimeRemainingMs(getCancellationTimeRemaining(nextOrder));
-      setError("");
+        if (lastStatusRef.current && lastStatusRef.current !== nextOrder.status) {
+          pushToast({
+            title: `Order ${nextOrder.status.replaceAll("_", " ").toLowerCase()}`,
+            description: `Tracking for ${nextOrder.id} just moved to ${nextOrder.status.replaceAll("_", " ")}.`,
+            tone: nextOrder.status === "SERVED" ? "success" : "info"
+          });
+        }
+
+        lastStatusRef.current = nextOrder.status;
+        setOrder(nextOrder);
+        setTimeRemainingMs(getCancellationTimeRemaining(nextOrder));
+        setError("");
+      })();
     }
 
     poll();
@@ -70,7 +78,7 @@ export function TrackClient() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [orderId, pushToast]);
+  }, [orderId, pushToast, upsertOrder]);
 
   const canCancel = canCancelOrder(order);
   const cancellationMinutesLeft = Math.max(1, Math.ceil(timeRemainingMs / 60000));
@@ -99,8 +107,7 @@ export function TrackClient() {
               Follow your order in real time.
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-500">
-              This screen reads directly from local storage every 2 seconds, so updates from checkout,
-              cancellation, and admin controls stay synchronized.
+              This screen polls the backend every 2 seconds so kitchen, admin, and staff updates stay aligned.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Input
@@ -136,7 +143,7 @@ export function TrackClient() {
                   <div>
                     <p className="font-display text-3xl font-bold text-[#23233f]">This order has been cancelled</p>
                     <p className="mt-2 text-sm text-slate-500">
-                      The cancellation was stored locally and reflected instantly in tracking.
+                      The cancellation was saved to the shared order record.
                     </p>
                   </div>
                 </div>
@@ -196,19 +203,23 @@ export function TrackClient() {
                   <Button
                     variant="danger"
                     onClick={() => {
-                      const cancelled = cancelOrder(order.id);
-                      if (cancelled) {
+                      void (async () => {
+                        const cancelled = await cancelBackendOrder(order.id);
+                        if (cancelled) {
+                          upsertOrder(cancelled);
+                          setTimeRemainingMs(0);
+                          setOrder(cancelled);
+                          lastStatusRef.current = "CANCELLED";
+                          pushToast({
+                            title: "Order cancelled",
+                            description: "The order status has been updated in the backend.",
+                            tone: "warning"
+                          });
+                          return;
+                        }
+
                         setTimeRemainingMs(0);
-                        setOrder({ ...order, status: "CANCELLED" });
-                        lastStatusRef.current = "CANCELLED";
-                        pushToast({
-                          title: "Order cancelled",
-                          description: "The order status has been updated in local storage.",
-                          tone: "warning"
-                        });
-                      } else {
-                        setTimeRemainingMs(0);
-                      }
+                      })();
                     }}
                   >
                     Cancel Order

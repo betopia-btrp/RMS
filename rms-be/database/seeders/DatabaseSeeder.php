@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Allergen;
 use App\Models\Customer;
 use App\Models\DietaryTag;
+use App\Models\Ingredient;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Notification;
@@ -23,19 +24,24 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $venue = Venue::create([
-            'name' => 'Savoria Demo Restaurant',
-            'subscription_tier' => 'growth',
-            'currency' => 'USD',
-            'timezone' => 'Asia/Dhaka',
-            'welcome_banner' => 'QR-powered smart ordering for dine-in guests.',
-            'service_charge_pct' => 5,
-        ]);
+        $venue = Venue::firstOrCreate(
+            ['name' => 'Savoria Demo Restaurant'],
+            [
+                'subscription_tier' => 'growth',
+                'currency' => 'USD',
+                'timezone' => 'Asia/Dhaka',
+                'welcome_banner' => 'QR-powered smart ordering for dine-in guests.',
+                'service_charge_pct' => 5,
+            ]
+        );
 
         foreach ([
-            ['Demo Admin', 'admin@savoria.local', 'owner', 'admin123'],
-            ['Floor Manager', 'manager@savoria.local', 'manager', 'manager123'],
-            ['Cash Counter', 'cashier@savoria.local', 'cashier', 'cashier123'],
+            ['Demo Admin', 'admin@savoria.local', 'ADMIN', 'admin123'],
+            ['Kitchen Lead', 'kitchen@savoria.local', 'KITCHEN', 'kitchen123'],
+            ['Floor Waitstaff', 'waiter@savoria.local', 'WAITER', 'waiter123'],
+            ['Waitstaff One', 'waiter1@savoria.local', 'WAITER', 'waiter123'],
+            ['Waitstaff Two', 'waiter2@savoria.local', 'WAITER', 'waiter123'],
+            ['Waitstaff Three', 'waiter3@savoria.local', 'WAITER', 'waiter123'],
         ] as [$name, $email, $role, $pin]) {
             StaffUser::updateOrCreate(
                 ['email' => $email],
@@ -50,29 +56,29 @@ class DatabaseSeeder extends Seeder
         }
 
         foreach (['A1', 'A2', 'B1', 'Patio 1'] as $label) {
-            $table = TableUnit::create([
-                'venue_id' => $venue->venue_id,
-                'label' => $label,
-                'section' => str_starts_with($label, 'Patio') ? 'Patio' : 'Dining',
-            ]);
+            $table = TableUnit::firstOrCreate(
+                ['venue_id' => $venue->venue_id, 'label' => $label],
+                ['section' => str_starts_with($label, 'Patio') ? 'Patio' : 'Dining']
+            );
 
-            QrCode::create([
-                'venue_id' => $venue->venue_id,
-                'table_id' => $table->table_id,
-                'code_url' => "http://localhost:3000/menu?table={$table->table_id}",
-                'generated_at' => now(),
-            ]);
+            QrCode::updateOrCreate(
+                ['table_id' => $table->table_id],
+                [
+                    'venue_id' => $venue->venue_id,
+                    'code_url' => "http://localhost:3000/menu?table={$table->table_id}",
+                    'generated_at' => now(),
+                ]
+            );
         }
 
         $categories = collect([
             'Food' => 1,
             'Drinks' => 2,
             'Desserts' => 3,
-        ])->map(fn ($sort, $name) => MenuCategory::create([
-            'venue_id' => $venue->venue_id,
-            'name' => $name,
-            'sort_order' => $sort,
-        ]));
+        ])->map(fn ($sort, $name) => MenuCategory::updateOrCreate(
+            ['venue_id' => $venue->venue_id, 'name' => $name],
+            ['sort_order' => $sort]
+        ));
 
         $tags = collect([
             'Vegetarian' => '#2F855A',
@@ -91,41 +97,56 @@ class DatabaseSeeder extends Seeder
             'Refreshing' => '#00A3C4',
             'Decadent' => '#97266D',
             'Creamy' => '#B83280',
-        ])->map(fn ($color, $name) => DietaryTag::create(['name' => $name, 'color_code' => $color]));
+        ])->map(fn ($color, $name) => DietaryTag::updateOrCreate(['name' => $name], ['color_code' => $color]));
 
         collect([
             ['Dairy', 'milk'],
             ['Gluten', 'wheat'],
             ['Tree Nuts', 'nut'],
             ['Sesame', 'seed'],
-        ])->each(fn ($allergen) => Allergen::create(['name' => $allergen[0], 'icon_code' => $allergen[1]]));
+        ])->each(fn ($allergen) => Allergen::updateOrCreate(['name' => $allergen[0]], ['icon_code' => $allergen[1]]));
+
+        $allergens = Allergen::query()->get()->keyBy('name');
+        $ingredients = collect([
+            'Chicken', 'Turmeric Rice', 'Citrus Slaw', 'Herb Yogurt', 'Roasted Peppers',
+            'Flatbread', 'Basil Pesto', 'Heirloom Tomatoes', 'Ricotta', 'Arugula',
+            'Mango Puree', 'Sparkling Water', 'Mint', 'Lime',
+            'Dark Chocolate', 'Berry Compote', 'Tofu', 'Rice Noodles', 'Bok Choy',
+            'Sesame Crunch', 'Chili Garlic Broth', 'Vanilla Cream Cheese', 'Almond Crust', 'Peach Slices',
+        ])->mapWithKeys(fn ($name) => [$name => Ingredient::updateOrCreate(['name' => $name])]);
 
         $items = [
-            ['Citrus Flame Chicken Bowl', 'Char-grilled chicken, turmeric rice, citrus slaw, herb yogurt, and roasted peppers.', 16.50, 'Food', 540, 38, 44, 88, ['Balanced', 'High Protein', 'Halal', 'Healthy', 'Spicy'], 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=900&q=80'],
-            ['Garden Harvest Flatbread', 'Wood-fired flatbread with basil pesto, heirloom tomatoes, ricotta, and arugula.', 14.00, 'Food', 470, 18, 52, 82, ['Vegetarian', 'Fresh', 'Halal'], 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=80'],
-            ['Velvet Mango Cooler', 'Fresh mango puree, sparkling water, mint, and lime over crushed ice.', 7.50, 'Drinks', 120, 1, 28, 76, ['Vegan', 'Vegetarian', 'Gluten-Free', 'Refreshing', 'Signature'], 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=900&q=80'],
-            ['Midnight Cocoa Tart', 'Dark chocolate ganache tart with sea salt flakes and berry compote.', 9.50, 'Desserts', 390, 6, 34, 59, ['Vegetarian', 'Decadent', "Chef's Pick"], 'https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=900&q=80'],
-            ['Ember Tofu Noodles', 'Rice noodles, glazed tofu, bok choy, sesame crunch, and chili-garlic broth.', 15.00, 'Food', 510, 21, 58, 84, ['Plant-Based', 'Spicy', 'Vegan', 'Vegetarian', 'Halal', 'Gluten-Free'], 'https://images.unsplash.com/photo-1617093727343-374698b1b08d?auto=format&fit=crop&w=900&q=80'],
-            ['Vanilla Cloud Cheesecake', 'Silky vanilla cheesecake with almond crust and caramelized peach slices.', 10.00, 'Desserts', 410, 7, 30, 63, ['Creamy', 'Seasonal', 'Vegetarian', 'Gluten-Free'], 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=900&q=80'],
+            ['Citrus Flame Chicken Bowl', 'Char-grilled chicken, turmeric rice, citrus slaw, herb yogurt, and roasted peppers.', 16.50, 'Food', 540, 38, 44, 88, ['Balanced', 'High Protein', 'Halal', 'Healthy', 'Spicy'], ['Chicken', 'Turmeric Rice', 'Citrus Slaw', 'Herb Yogurt', 'Roasted Peppers'], ['Dairy'], 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=900&q=80'],
+            ['Garden Harvest Flatbread', 'Wood-fired flatbread with basil pesto, heirloom tomatoes, ricotta, and arugula.', 14.00, 'Food', 470, 18, 52, 82, ['Vegetarian', 'Fresh', 'Halal'], ['Flatbread', 'Basil Pesto', 'Heirloom Tomatoes', 'Ricotta', 'Arugula'], ['Dairy', 'Gluten'], 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=80'],
+            ['Velvet Mango Cooler', 'Fresh mango puree, sparkling water, mint, and lime over crushed ice.', 7.50, 'Drinks', 120, 1, 28, 76, ['Vegan', 'Vegetarian', 'Gluten-Free', 'Refreshing', 'Signature'], ['Mango Puree', 'Sparkling Water', 'Mint', 'Lime'], [], 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=900&q=80'],
+            ['Midnight Cocoa Tart', 'Dark chocolate ganache tart with sea salt flakes and berry compote.', 9.50, 'Desserts', 390, 6, 34, 59, ['Vegetarian', 'Decadent', "Chef's Pick"], ['Dark Chocolate', 'Berry Compote'], ['Dairy', 'Gluten'], 'https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=900&q=80'],
+            ['Ember Tofu Noodles', 'Rice noodles, glazed tofu, bok choy, sesame crunch, and chili-garlic broth.', 15.00, 'Food', 510, 21, 58, 84, ['Plant-Based', 'Spicy', 'Vegan', 'Vegetarian', 'Halal', 'Gluten-Free'], ['Tofu', 'Rice Noodles', 'Bok Choy', 'Sesame Crunch', 'Chili Garlic Broth'], ['Sesame'], 'https://images.unsplash.com/photo-1617093727343-374698b1b08d?auto=format&fit=crop&w=900&q=80'],
+            ['Vanilla Cloud Cheesecake', 'Silky vanilla cheesecake with almond crust and caramelized peach slices.', 10.00, 'Desserts', 410, 7, 30, 63, ['Creamy', 'Seasonal', 'Vegetarian', 'Gluten-Free'], ['Vanilla Cream Cheese', 'Almond Crust', 'Peach Slices'], ['Dairy', 'Tree Nuts'], 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=900&q=80'],
         ];
 
         $menuItems = collect();
-        foreach ($items as $index => [$name, $description, $price, $category, $calories, $protein, $carbs, $score, $tagNames, $image]) {
-            $item = MenuItem::create([
-                'venue_id' => $venue->venue_id,
-                'category_id' => $categories[$category]->category_id,
-                'name' => $name,
-                'description' => $description,
-                'price' => $price,
-                'calories' => $calories,
-                'protein_g' => $protein,
-                'carbs_g' => $carbs,
-                'health_score' => $score,
-                'sort_order' => $index + 1,
-            ]);
+        foreach ($items as $index => [$name, $description, $price, $category, $calories, $protein, $carbs, $score, $tagNames, $ingredientNames, $allergenNames, $image]) {
+            $item = MenuItem::updateOrCreate(
+                ['venue_id' => $venue->venue_id, 'name' => $name],
+                [
+                    'category_id' => $categories[$category]->category_id,
+                    'description' => $description,
+                    'price' => $price,
+                    'calories' => $calories,
+                    'protein_g' => $protein,
+                    'carbs_g' => $carbs,
+                    'health_score' => $score,
+                    'sort_order' => $index + 1,
+                ]
+            );
 
-            $item->photos()->create(['s3_url' => $image, 'uploaded_at' => now()]);
+            $item->photos()->updateOrCreate(
+                ['item_id' => $item->item_id, 'sort_order' => 0],
+                ['s3_url' => $image, 'uploaded_at' => now()]
+            );
             $item->tags()->sync(collect($tagNames)->map(fn ($tag) => $tags[$tag]->tag_id)->all());
+            $item->ingredients()->sync(collect($ingredientNames)->map(fn ($ingredient) => $ingredients[$ingredient]->ingredient_id)->all());
+            $item->allergens()->sync(collect($allergenNames)->map(fn ($allergen) => $allergens[$allergen]->allergen_id)->all());
             $menuItems->put($name, $item);
         }
 
@@ -140,8 +161,8 @@ class DatabaseSeeder extends Seeder
         ]));
 
         $tables = TableUnit::where('venue_id', $venue->venue_id)->get()->keyBy('label');
-        $owner = StaffUser::where('venue_id', $venue->venue_id)->where('role', 'owner')->first();
-        $manager = StaffUser::where('venue_id', $venue->venue_id)->where('role', 'manager')->first();
+        $owner = StaffUser::where('venue_id', $venue->venue_id)->where('role', 'ADMIN')->first();
+        $manager = StaffUser::where('venue_id', $venue->venue_id)->where('role', 'WAITER')->first();
 
         $orderDefinitions = [
             [

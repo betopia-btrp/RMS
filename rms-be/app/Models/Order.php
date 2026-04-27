@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['venue_id', 'table_id', 'customer_id', 'status', 'total_amount', 'estimated_wait_min', 'served_at', 'cancelled_at'])]
+#[Fillable(['venue_id', 'table_id', 'customer_id', 'client_request_id', 'status', 'total_amount', 'estimated_wait_min', 'served_at', 'cancelled_at'])]
 class Order extends Model
 {
     use UsesUuidPrimaryKey;

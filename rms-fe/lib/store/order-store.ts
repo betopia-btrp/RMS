@@ -6,12 +6,6 @@ import type { CartItem, OrderDTO, OrderStatus, PaymentMethod, PaymentStatus } fr
 
 const ORDER_STORAGE_KEY = "restaurant-orders";
 const CANCELLATION_WINDOW_MS = 5 * 60 * 1000;
-const STATUS_FLOW: OrderStatus[] = [
-  "ORDER_TAKEN",
-  "IN_KITCHEN",
-  "READY",
-  "SERVED"
-];
 
 type OrderStore = {
   orders: OrderDTO[];
@@ -23,6 +17,7 @@ type OrderStore = {
     paymentLast4?: string;
     paymentAccount?: string;
   }) => OrderDTO;
+  upsertOrder: (order: OrderDTO) => void;
   getOrderById: (id: string) => OrderDTO | undefined;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
   cancelOrder: (id: string) => boolean;
@@ -93,40 +88,12 @@ export function getCancellationTimeRemaining(order: OrderDTO | null | undefined)
   return Math.max(0, CANCELLATION_WINDOW_MS - (Date.now() - new Date(order.createdAt).getTime()));
 }
 
-function getElapsedMinutes(order: OrderDTO) {
-  return Math.max(0, Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000));
-}
-
-function getEstimatedStatus(order: OrderDTO): OrderStatus {
-  if (order.status === "CANCELLED" || order.status === "SERVED") {
-    return order.status;
-  }
-
-  const minutesElapsed = getElapsedMinutes(order);
-
-  if (minutesElapsed >= 6) return "SERVED";
-  if (minutesElapsed >= 4) return "READY";
-  if (minutesElapsed >= 2) return "IN_KITCHEN";
-  return "ORDER_TAKEN";
-}
-
 export function getLiveOrder(order: OrderDTO | null | undefined) {
   if (!order) {
     return null;
   }
 
-  if (order.status === "CANCELLED") {
-    return order;
-  }
-
-  const estimatedStatus = getEstimatedStatus(order);
-  const storedIndex = STATUS_FLOW.indexOf(order.status);
-  const estimatedIndex = STATUS_FLOW.indexOf(estimatedStatus);
-
-  return {
-    ...order,
-    status: STATUS_FLOW[Math.max(storedIndex, estimatedIndex)] ?? order.status
-  };
+  return order;
 }
 
 export const useOrderStore = create<OrderStore>()(
@@ -165,6 +132,14 @@ export const useOrderStore = create<OrderStore>()(
         set((state) => ({ orders: [order, ...getOrdersSnapshot(state.orders)] }));
         return order;
       },
+      upsertOrder: (order) =>
+        set((state) => {
+          const snapshot = getOrdersSnapshot(state.orders);
+          const existing = snapshot.some((item) => item.id === order.id);
+          return {
+            orders: existing ? snapshot.map((item) => (item.id === order.id ? order : item)) : [order, ...snapshot]
+          };
+        }),
       getOrderById: (id) => {
         const localStorageOrder = getStoredOrderById(id);
         if (localStorageOrder) {
