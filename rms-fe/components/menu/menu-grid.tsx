@@ -24,6 +24,7 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
   const [hydrated, setHydrated] = useState(false);
   const [activeCategory, setActiveCategory] = useState<ActiveCategory>("All");
   const [activeFilters, setActiveFilters] = useState<DietaryFilter[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   useEffect(() => {
@@ -63,10 +64,12 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
   const sourceItems = hydrated ? storedItems : items;
 
   const filteredItems = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
     return sourceItems.filter((item) => {
       if (activeCategory !== "All" && item.category !== activeCategory) return false;
 
-      return activeFilters.every((filter) => {
+      const matchesDietaryFilters = activeFilters.every((filter) => {
         if (filter === "Vegetarian") return item.vegetarian;
         if (filter === "Vegan") return item.vegan;
         if (filter === "Halal") return item.halal;
@@ -74,12 +77,18 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
         if (filter === "Spicy") return item.spicy;
         return true;
       });
+
+      if (!matchesDietaryFilters) return false;
+      if (!normalizedSearch) return true;
+
+      const searchable = `${item.name} ${item.description} ${item.tags.join(" ")}`.toLowerCase();
+      return searchable.includes(normalizedSearch);
     });
-  }, [activeCategory, activeFilters, sourceItems]);
+  }, [activeCategory, activeFilters, searchTerm, sourceItems]);
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
-  }, [activeCategory, activeFilters, sourceItems]);
+  }, [activeCategory, activeFilters, searchTerm, sourceItems]);
 
   const visibleItems = filteredItems.slice(0, visibleCount);
   const hasMoreItems = visibleCount < filteredItems.length;
@@ -150,7 +159,16 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
       </div>
 
       <div className="rounded-[32px] bg-white p-5 shadow-soft">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-4">
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search food by name, description, or tag..."
+            className="w-full rounded-full border border-orange-100 bg-[#fffaf5] px-5 py-3 text-sm text-slate-700 outline-none transition focus:border-[#ff7a1a] focus:bg-white"
+            aria-label="Search menu items"
+          />
+          <div className="flex flex-wrap items-center gap-3">
           <Badge className="bg-[#23233f] text-white">Filter Menu</Badge>
           {dietaryFilters.map((filter) => {
             const active = activeFilters.includes(filter);
@@ -174,6 +192,7 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
               </button>
             );
           })}
+          </div>
         </div>
       </div>
 
