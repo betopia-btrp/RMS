@@ -32,6 +32,8 @@ export default async function MenuPage() {
           <CustomerActions />
         </header>
 
+
+        
         <section
           id="discover"
           className="hero-wave rounded-[42px] bg-white px-6 py-10 shadow-soft sm:px-8 lg:px-12 lg:py-14"
