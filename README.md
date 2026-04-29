@@ -31,7 +31,7 @@ Make sure the following are installed before getting started:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Md-Bari/RMS.git
+git clone https://github.com/betopia-btrp/RMS.git
 cd RMS
 ```
 
