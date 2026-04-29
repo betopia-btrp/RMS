@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateStaffUserRequest extends FormRequest
 {
@@ -13,10 +14,17 @@ class UpdateStaffUserRequest extends FormRequest
 
     public function rules(): array
     {
+        $staffUser = $this->route('staffUser');
+
         return [
             'name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'email', 'max:255'],
-            'role' => ['sometimes', 'in:owner,manager,cashier,staff,kitchen,admin'],
+            'email' => [
+                'sometimes',
+                'email',
+                'max:255',
+                Rule::unique('staff_users', 'email')->ignore($staffUser?->user_id, 'user_id'),
+            ],
+            'role' => ['sometimes', 'in:ADMIN,KITCHEN,WAITER'],
         ];
     }
 }

@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { InviteStaffForm } from "@/components/admin/invite-staff-form";
 
 const emptyForm = {
   name: "",
@@ -86,6 +87,7 @@ export function DashboardClient() {
   const [venue, setVenue] = useState<VenueDTO | null>(null);
   const [popularItems, setPopularItems] = useState<Array<{ name: string; quantity: number; revenue: number }>>([]);
   const [adminOrders, setAdminOrders] = useState<OrderDTO[]>([]);
+  const [showInviteForm, setShowInviteForm] = useState(false);
   const [orderFilters, setOrderFilters] = useState({
     status: "",
     table: "",
@@ -953,8 +955,18 @@ export function DashboardClient() {
           </Card>
 
           <Card className="bg-white p-6 sm:p-8">
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Staff & Setup</p>
-            <h3 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Roles and menu metadata</h3>
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Staff & Setup</p>
+                <h3 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Roles and menu metadata</h3>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => setShowInviteForm(true)}
+              >
+                Invite Staff
+              </Button>
+            </div>
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
               <div className="rounded-[28px] bg-[#fffaf6] p-5">
                 <p className="font-semibold text-[#23233f]">Staff roles</p>
@@ -978,6 +990,28 @@ export function DashboardClient() {
           </Card>
         </div>
       </section>
+
+      {showInviteForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md bg-white p-6 sm:p-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-[#23233f]">Invite Staff Member</h2>
+              <p className="mt-2 text-sm text-slate-500">Add a new team member with a specific role</p>
+            </div>
+            <InviteStaffForm
+              onSuccess={async () => {
+                setShowInviteForm(false);
+                // Reload staff list
+                const payload = await fetchAdminDashboard();
+                if (payload?.staff?.length) {
+                  setStaffMembers(payload.staff);
+                }
+              }}
+              onCancel={() => setShowInviteForm(false)}
+            />
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
