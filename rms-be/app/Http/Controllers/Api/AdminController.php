@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\InviteStaffUserRequest;
 use App\Http\Requests\StaffLoginRequest;
 use App\Http\Requests\UpdateStaffUserRequest;
 use App\Http\Resources\AuthStaffResource;
@@ -136,6 +137,27 @@ class AdminController extends Controller
         return response()->json([
             'staff' => new StaffUserResource($staffUser->fresh()),
         ]);
+    }
+
+    public function inviteStaff(InviteStaffUserRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+        $admin = $request->user();
+        $role = strtoupper($data['role']);
+        $venueId = $data['venue_id'] ?? $admin?->venue_id ?? Venue::query()->value('venue_id');
+
+        $staff = StaffUser::create([
+            'venue_id' => $venueId,
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'role' => $role,
+            'pin_hash' => Hash::make($data['password']),
+            'invited_at' => now(),
+        ]);
+
+        return response()->json([
+            'staff' => new StaffUserResource($staff),
+        ], 201);
     }
 
     public function exportReport(Request $request): JsonResponse

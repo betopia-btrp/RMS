@@ -35,8 +35,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:ADMIN,WAITER')->group(function () {
         Route::get('/staff/ready-orders', [StaffController::class, 'readyOrders']);
         Route::patch('/orders/{order}/serve', [StaffController::class, 'serve']);
-        Route::get('/staff/users', [StaffController::class, 'index']);
-        Route::patch('/staff/users/{staffUser}', [StaffController::class, 'update']);
     });
 
     Route::middleware('role:ADMIN')->group(function () {
@@ -46,6 +44,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/admin/reports/export', [AdminController::class, 'exportReport']);
         Route::get('/admin/settings', [AdminController::class, 'settings']);
         Route::patch('/admin/staff/{staffUser}', [AdminController::class, 'updateStaff']);
+        Route::post('/admin/staff/invite', [AdminController::class, 'inviteStaff']);
+        Route::get('/staff/users', [StaffController::class, 'index']);
+        Route::patch('/staff/users/{staffUser}', [StaffController::class, 'update']);
         Route::post('/admin/menu', [MenuController::class, 'store']);
         Route::patch('/admin/menu/{menuItem}', [MenuController::class, 'update']);
         Route::post('/admin/menu-items', [MenuController::class, 'store']);

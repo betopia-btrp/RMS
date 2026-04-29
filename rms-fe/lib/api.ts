@@ -319,3 +319,16 @@ export async function downloadAdminReport(period: "daily" | "weekly" | "monthly"
 
   return true;
 }
+
+export async function inviteStaffUser(data: {
+  email: string;
+  role: "ADMIN" | "KITCHEN" | "WAITER";
+  password: string;
+  name?: string;
+}) {
+  return safeJsonFetch<StaffUserDTO>("/admin/staff/invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
